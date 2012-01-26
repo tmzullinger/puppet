@@ -5,6 +5,7 @@ require 'tmpdir'
 
 require 'puppet/node/environment'
 require 'puppet/util/execution'
+require 'puppet_spec/modules'
 
 describe Puppet::Node::Environment do
   let(:env) { Puppet::Node::Environment.new("testing") }
@@ -124,11 +125,13 @@ describe Puppet::Node::Environment do
 
   describe "when validating modulepath or manifestdir directories" do
     before :each do
-      @path_one = make_absolute('/one')
-      @path_two = make_absolute('/two')
+      @path_one = tmpdir("path_one")
+      @path_two = tmpdir("path_one")
+      sep = File::PATH_SEPARATOR
+      Puppet[:modulepath] = "#{@path_one}#{sep}#{@path_two}"
     end
 
-    it "should not return non-directories" do
+    it "should not return non-directories and warn" do
       FileTest.expects(:directory?).with(@path_one).returns true
       FileTest.expects(:directory?).with(@path_two).returns false
 
@@ -167,15 +170,13 @@ describe Puppet::Node::Environment do
     end
 
     it "should return nil if asked for a module that does not exist in its path" do
-
-      mod = mock 'module'
-      Puppet::Module.expects(:new).with("one", :environment => env).returns mod
-      mod.expects(:exist?).returns false
+      modpath = tmpdir('modpath')
+      env.modulepath = modpath
 
       env.module("one").should be_nil
     end
 
-    describe "module stuff" do
+    describe "module data" do
       before do
         dir = tmpdir("deep_path")
 
@@ -209,74 +210,81 @@ describe Puppet::Node::Environment do
         end
       end
 
-      describe "#module_dependencies" do
+      describe "#module_requirements" do
         it "should return a list of what modules depend on other modules" do
-          foo = Puppet::Module.new('foo')
-          foo.stubs(:dependencies).returns([{ 'name' => 'puppetlabs/bar', "version_requirement" => ">= 2.0.0" }])
-          bar = Puppet::Module.new('bar')
-          bar.stubs(:dependencies).returns([{ 'name' => 'puppetlabs/foo', "version_requirement" => "<= 2.0.0" }])
-          baz = Puppet::Module.new('baz')
-          baz.stubs(:dependencies).returns([{ 'name' => 'puppetlabs/bar', "version_requirement" => "= 2.0.0" }])
+          PuppetSpec::Modules.create(
+            'foo',
+            @first,
+            :author       => 'puppetlabs',
+            :dependencies => [{ 'name' => 'puppetlabs/bar', "version_requirement" => ">= 1.0.0" }]
+          )
+          PuppetSpec::Modules.create(
+            'bar',
+            @second,
+            :author       => 'puppetlabs',
+            :dependencies => [{ 'name' => 'puppetlabs/foo', "version_requirement" => "<= 2.0.0" }]
+          )
+          PuppetSpec::Modules.create(
+            'baz',
+            @first,
+            :author       => 'puppetlabs',
+            :dependencies => [{ 'name' => 'puppetlabs/bar', "version_requirement" => "3.0.0" }]
+          )
 
-          env.stubs(:modules).returns [foo, bar, baz]
-
-          env.module_dependencies.should == {
-            'foo' => { :required_by => ['bar'] },
-            'bar' => { :required_by => ['foo', 'baz'] },
-            'baz' => { :required_by => [] }
+          env.module_requirements.should == {
+            'puppetlabs/foo' => { :required_by => [['puppetlabs/bar', '<= 2.0.0']] },
+            'puppetlabs/bar' => { :required_by => [['puppetlabs/baz', '3.0.0'], ['puppetlabs/foo', '>= 1.0.0']] },
+            'puppetlabs/baz' => { :required_by => [] }
           }
         end
       end
-    end
 
-    describe ".modules" do
-      it "should return an empty list if there are no modules" do
-        env.modulepath = %w{/a /b}
-        Dir.expects(:entries).with("/a").returns []
-        Dir.expects(:entries).with("/b").returns []
+      describe ".modules" do
+        it "should return an empty list if there are no modules" do
+          env.modules.should == []
+        end
 
-        env.modules.should == []
-      end
+        it "should return a module named for every directory in each module path" do
+          %w{foo bar}.each do |mod_name|
+            FileUtils.mkdir_p(File.join(@first, mod_name))
+          end
+          %w{bee baz}.each do |mod_name|
+            FileUtils.mkdir_p(File.join(@second, mod_name))
+          end
+          env.modules.collect{|mod| mod.name}.sort.should == %w{foo bar bee baz}.sort
+        end
 
-      it "should return a module named for every directory in each module path" do
-        env.modulepath = %w{/a /b}
-        Dir.expects(:entries).with("/a").returns %w{foo bar}
-        Dir.expects(:entries).with("/b").returns %w{bee baz}
+        it "should remove duplicates" do
+          FileUtils.mkdir_p(File.join(@first,  'foo'))
+          FileUtils.mkdir_p(File.join(@second, 'foo'))
 
-        env.modules.collect{|mod| mod.name}.sort.should == %w{foo bar bee baz}.sort
-      end
+          env.modules.collect{|mod| mod.name}.sort.should == %w{foo}
+        end
 
-      it "should remove duplicates" do
-        env.modulepath = %w{/a /b}
-        Dir.expects(:entries).with("/a").returns %w{foo}
-        Dir.expects(:entries).with("/b").returns %w{foo}
+        it "should ignore modules with invalid names" do
+          FileUtils.mkdir_p(File.join(@first, 'foo'))
+          FileUtils.mkdir_p(File.join(@first, 'foo2'))
+          FileUtils.mkdir_p(File.join(@first, 'foo-bar'))
+          FileUtils.mkdir_p(File.join(@first, 'foo_bar'))
+          FileUtils.mkdir_p(File.join(@first, 'foo*bar'))
+          FileUtils.mkdir_p(File.join(@first, 'foo bar'))
 
-        env.modules.collect{|mod| mod.name}.sort.should == %w{foo}
-      end
+          env.modules.collect{|mod| mod.name}.sort.should == %w{foo foo-bar foo2 foo_bar}
+        end
 
-      it "should ignore invalid modules" do
-        env.modulepath = %w{/a}
-        Dir.expects(:entries).with("/a").returns %w{foo bar}
+        it "should create modules with the correct environment" do
+          FileUtils.mkdir_p(File.join(@first, 'foo'))
 
-        Puppet::Module.expects(:new).with { |name, env| name == "foo" }.returns mock("foomod", :name => "foo")
-        Puppet::Module.expects(:new).with { |name, env| name == "bar" }.raises( Puppet::Module::InvalidName, "name is invalid" )
+          env.modules.each {|mod| mod.environment.should == env }
+        end
 
-        env.modules.collect{|mod| mod.name}.sort.should == %w{foo}
-      end
+        it "should cache the module list" do
+          env.modulepath = %w{/a}
+          Dir.expects(:entries).once.with("/a").returns %w{foo}
 
-      it "should create modules with the correct environment" do
-        env.modulepath = %w{/a}
-        Dir.expects(:entries).with("/a").returns %w{foo}
-
-        env.modules.each {|mod| mod.environment.should == env }
-      end
-
-      it "should cache the module list" do
-        env.modulepath = %w{/a}
-        Dir.expects(:entries).once.with("/a").returns %w{foo}
-
-        env.modules
-        env.modules
+          env.modules
+          env.modules
+        end
       end
     end
   end

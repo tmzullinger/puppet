@@ -104,11 +104,7 @@ class Puppet::Node::Environment
   # Return all modules from this environment.
   # Cache the list, because it can be expensive to create.
   cached_attr(:modules, Puppet[:filetimeout]) do
-    module_names = modulepath.collect do |path|
-      Dir.chdir(path) do
-        Dir.glob('*').select { |d| FileTest.directory? d }
-      end
-    end.flatten.uniq
+    module_names = modulepath.collect { |path| Dir.entries(path) }.flatten.uniq
     module_names.collect do |path|
       begin
         Puppet::Module.new(path, :environment => self)
@@ -132,17 +128,15 @@ class Puppet::Node::Environment
     modules_by_path
   end
 
-  # in order to answer the question for a module of who depends on me
-  # we need to look at all the modules in the environment
-  def module_dependencies
+  def module_requirements
     deps = {}
     modules.each do |mod|
-      deps[mod.name] ||= { :required_by => [] }
-      mod.dependencies and mod.dependencies.each do |mod_dep|
-        dep_author, dep_name = mod_dep['name'].split('/')
-        deps[dep_name] ||= {}
-        deps[dep_name][:required_by] ||= []
-        deps[dep_name][:required_by] << mod.name
+      next unless mod.forge_name
+      deps[mod.forge_name] ||= { :required_by => [] }
+      mod.dependencies and mod.dependencies.sort_by {|mod_dep| mod_dep['name']}.each do |mod_dep|
+        deps[mod_dep['name']] ||= {}
+        deps[mod_dep['name']][:required_by] ||= []
+        deps[mod_dep['name']][:required_by] << [mod.forge_name, mod_dep['version_requirement']]
       end
     end
     deps
