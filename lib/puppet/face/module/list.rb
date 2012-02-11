@@ -75,7 +75,8 @@ Puppet::Face.define(:module, '1.0.0') do
       output << "\n" if dependency_errors
 
       modules_by_path.each do |path, modules|
-        output << "#{path}\n"
+        no_mods = modules.empty? ? ' (No modules installed)' : ''
+        output << "#{path}#{no_mods}\n"
         if options[:tree]
           # The modules with fewest things depending on them will be the
           # parent of the tree.  Can't assume to start with 0 dependencies since
