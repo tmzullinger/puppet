@@ -1,3 +1,5 @@
+require 'set'
+
 module Puppet::Module::Tool
   module Applications
     class Uninstaller < Application
@@ -16,6 +18,7 @@ module Puppet::Module::Tool
         else
           @errors[@name] << "Module #{@name} is not installed"
         end
+
         { :removed_mods => @removed_mods, :errors => @errors, :options => @options }
       end
 
@@ -29,21 +32,68 @@ module Puppet::Module::Tool
         end
       end
 
+      # Only match installed modules by forge_name, which ensures the module
+      # has proper metadata and a good sign it was install by the module
+      # tool.
       def module_installed?
-        @environment.module(@name)
+        @environment.modules_by_path.each do |path, modules|
+          modules.each do |mod|
+            return false unless mod.has_metadata?
+
+            full_name = mod.forge_name.sub('/', '-')
+            if full_name == @name
+              return true
+            end
+          end
+        end
+        false
       end
 
-      def has_changes?
-        Puppet::Module::Tool::Applications::Checksummer.run(@module.path)
+      def has_local_changes?(path)
+        changes = Puppet::Module::Tool::Applications::Checksummer.run(path)
+        changes == [] ? false : true
+      end
+
+      def broken_dependencies(mod)
+
+        requires_me = []
+        @environment.modules_by_path.each do |path, modules|
+          modules.each do |m|
+            next unless m.has_metadata?
+            m.dependencies.each do |dep|
+              requires_me << m if dep["name"] == mod.forge_name
+            end
+          end
+        end
+
+        requires_me
       end
 
       def uninstall
         # TODO: #11803 Check for broken dependencies before uninstalling modules.
         @environment.modules_by_path.each do |path, modules|
           modules.each do |mod|
-            if mod.name == @name
+            full_name = mod.forge_name.sub('/', '-')
+            if full_name == @name
+
+              # If required, check for version match
               unless version_match?(mod)
-                @errors[@name] << "Installed version of #{mod.name} (v#{mod.version}) does not match version range"
+                @errors[@name] << "Installed version of #{full_name} (v#{mod.version}) does not match version range"
+              end
+
+              # Check for local changes
+              if has_local_changes?(mod.path)
+                @errors[@name] << "Installed version of #{full_name} (v#{mod.version}) has local changes"
+              end
+
+              # Check from broken dependencies
+              requires_me = broken_dependencies(mod)
+              if requires_me.count > 0
+                msg = []
+                msg << "Cannot uninstall #{full_name} (v#{mod.version}) still required by:\n"
+                requires_me.each { |m| msg << "  #{m.forge_name.sub('/', '-')} (v#{m.version})" }
+                Puppet.err msg
+                next
               end
 
               if @errors[@name].empty?

@@ -34,6 +34,28 @@ describe Puppet::Module::Tool::Applications::Uninstaller do
     let(:fake_env) { Puppet::Node::Environment.new('fake_env') }
     let(:options)  { {:environment => "fake_env"} }
 
+    let(:foo_metadata) do
+      {
+        "author"       => "puppetlabs",
+        "name"         => "puppetlabs/foo",
+        "version"      => "1.0.0",
+        "source"       => "http://dummyurl/foo",
+        "license"      => "Apache2",
+        "dependencies" => [],
+      }
+    end
+
+    let(:bar_metadata) do
+      {
+        "author"       => "puppetlabs",
+        "name"         => "puppetlabs/bar",
+        "version"      => "1.0.0",
+        "source"       => "http://dummyurl/bar",
+        "license"      => "Apache2",
+        "dependencies" => [],
+      }
+    end
+
     context "when the module is not installed" do
       it "should return an empty list" do
         results = @uninstaller.new('fakemod_not_installed', options).run
@@ -42,83 +64,126 @@ describe Puppet::Module::Tool::Applications::Uninstaller do
     end
 
     context "when the module is installed" do
-      it "should uninstall the module" do
-        foo = mkmod("foo", modpath1)
 
-        results = @uninstaller.new("foo", options).run
-        results[:removed_mods].should == [
-          Puppet::Module.new('foo', :environment => fake_env, :path => foo)
-        ]
+      it "should uninstall the module" do
+        foo = mkmod("foo", modpath1, foo_metadata)
+
+        results = @uninstaller.new("puppetlabs-foo", options).run
+        results[:removed_mods].first.forge_name.should == "puppetlabs/foo"
       end
 
       it "should only uninstall the requested module" do
-        foo = mkmod("foo", modpath1)
+        foo = mkmod("foo", modpath1, foo_metadata)
+        bar = mkmod("bar", modpath1, bar_metadata)
 
-        results = @uninstaller.new("foo", options).run
-        results[:removed_mods].should == [
-          Puppet::Module.new("foo", :environment => fake_env, :path => foo)
-        ]
+        results = @uninstaller.new("puppetlabs-foo", options).run
+        results[:removed_mods].length == 1
+        results[:removed_mods].first.forge_name.should == "puppetlabs/foo"
       end
 
       it "should uninstall the module from every path in the modpath" do
-        foo1 = mkmod('foo', modpath1)
-        foo2 = mkmod('foo', modpath2)
+        foo1 = mkmod('foo', modpath1, foo_metadata)
+        foo2 = mkmod('foo', modpath2, foo_metadata)
 
-        results = @uninstaller.new('foo', options).run
+        results = @uninstaller.new('puppetlabs-foo', options).run
         results[:removed_mods].length.should == 2
-        results[:removed_mods].should include(
-          Puppet::Module.new('foo', :environment => fake_env, :path => foo1),
-          Puppet::Module.new('foo', :environment => fake_env, :path => foo2)
-        )
+        results[:removed_mods][0].forge_name.should == "puppetlabs/foo"
+        results[:removed_mods][1].forge_name.should == "puppetlabs/foo"
       end
 
       context "when options[:version] is specified" do
-        let(:metadata) do
-          {
-            "author"       => "",
-            "name"         => "foo",
-            "version"      => "1.0.0",
-            "source"       => "http://dummyurl",
-            "license"      => "Apache2",
-            "dependencies" => [],
-          }
-        end
 
         it "should uninstall the module if the version matches" do
-          foo = mkmod('foo', modpath1, metadata)
+          foo = mkmod('foo', modpath1, foo_metadata)
 
           options[:version] = "1.0.0"
 
-          results = @uninstaller.new("foo", options).run
+          results = @uninstaller.new("puppetlabs-foo", options).run
           results[:removed_mods].length.should == 1
-          results[:removed_mods].first.name.should == "foo"
+          results[:removed_mods].first.forge_name.should == "puppetlabs/foo"
           results[:removed_mods].first.version.should == "1.0.0"
         end
 
         it "should not uninstall the module if the version does not match" do
-          foo = mkmod("foo", modpath1, metadata)
+          foo = mkmod("foo", modpath1, foo_metadata)
 
           options[:version] = "2.0.0"
 
-          results = @uninstaller.new("foo", options).run
+          results = @uninstaller.new("puppetlabs-foo", options).run
           results[:removed_mods].should == []
-        end
-
-        context "when the module metadata is missing" do
-          it "should not uninstall the module" do
-            foo = mkmod("foo", modpath1)
-
-            options[:version] = "2.0.0"
-
-            results = @uninstaller.new("foo", options).run
-            results[:removed_mods].should == []
-          end
         end
       end
 
-      # This test is pending work in #11803 to which will add
-      # dependency resolution.
-      it "should check for broken dependencies"
+      context "when the module metadata is missing" do
+
+        it "should not uninstall the module" do
+          foo = mkmod("foo", modpath1)
+
+          results = @uninstaller.new("puppetlabs-foo", options).run
+          results[:removed_mods].should == []
+        end
+      end
+
+      context "when the module has local changes" do
+
+        it "should not uninstall the module" do
+          foo = mkmod("foo", modpath1, foo_metadata)
+          @uninstaller.any_instance.stubs(:has_local_changes?).returns(true)
+          results = @uninstaller.new("puppetlabs-foo", options).run
+          results[:removed_mods].should == []
+        end
+
+        it "should append an error" do
+          foo = mkmod("foo", modpath1, foo_metadata)
+
+          expected_output = {
+            "puppetlabs-foo" => ["Installed version of puppetlabs-foo (v1.0.0) has local changes"]
+          }
+
+          @uninstaller.any_instance.stubs(:has_local_changes?).returns(true)
+          results = @uninstaller.new("puppetlabs-foo", options).run
+          results[:errors].should == expected_output
+        end
+      end
+
+      context "when the module does not have local changes" do
+
+        it "should uninstall the module" do
+          foo = mkmod("foo", modpath1, foo_metadata)
+
+          @uninstaller.any_instance.stubs(:has_local_changes?).returns(false)
+          results = @uninstaller.new("puppetlabs-foo", options).run
+          results[:removed_mods].length.should == 1
+          results[:removed_mods].first.forge_name.should == "puppetlabs/foo"
+        end
+
+        it "should not append an error" do
+          foo = mkmod("foo", modpath1, foo_metadata)
+
+          expected_output = { "puppetlabs-foo" => [] }
+
+          @uninstaller.any_instance.stubs(:has_local_changes?).returns(false)
+          results = @uninstaller.new("puppetlabs-foo", options).run
+          results[:errors].should == expected_output
+        end
+      end
+
+      context "when uninstalling the module will cause broken dependencies" do
+        let(:fakemod) do
+          stub(
+            :forge_name => 'puppetlabs/fakemod',
+            :version    => '0.0.1'
+          )
+        end
+
+        it "should not uninstall the module" do
+          foo = mkmod("foo", modpath1, foo_metadata)
+
+          @uninstaller.any_instance.stubs(:broken_dependencies).returns([fakemod])
+          results = @uninstaller.new("puppetlabs-foo", options).run
+          results[:removed_mods].length.should == 0
+        end
+      end
     end
   end
 end
