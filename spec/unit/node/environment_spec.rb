@@ -189,7 +189,6 @@ describe Puppet::Node::Environment do
       end
 
       describe "#modules_by_path" do
-
         it "should return an empty list if there are no modules" do
           env.modules_by_path.should == {
             @first  => [],
@@ -232,9 +231,9 @@ describe Puppet::Node::Environment do
           )
 
           env.module_requirements.should == {
-            'puppetlabs/foo' => { :required_by => [['puppetlabs/bar', '<= 2.0.0']] },
-            'puppetlabs/bar' => { :required_by => [['puppetlabs/baz', '3.0.0'], ['puppetlabs/foo', '>= 1.0.0']] },
-            'puppetlabs/baz' => { :required_by => [] }
+            'puppetlabs/foo' => [['puppetlabs/bar', '<= 2.0.0']],
+            'puppetlabs/bar' => [['puppetlabs/baz', '3.0.0'], ['puppetlabs/foo', '>= 1.0.0']],
+            'puppetlabs/baz' => []
           }
         end
       end

@@ -132,11 +132,10 @@ class Puppet::Node::Environment
     deps = {}
     modules.each do |mod|
       next unless mod.forge_name
-      deps[mod.forge_name] ||= { :required_by => [] }
+      deps[mod.forge_name] ||= []
       mod.dependencies and mod.dependencies.sort_by {|mod_dep| mod_dep['name']}.each do |mod_dep|
-        deps[mod_dep['name']] ||= {}
-        deps[mod_dep['name']][:required_by] ||= []
-        deps[mod_dep['name']][:required_by] << [mod.forge_name, mod_dep['version_requirement']]
+        deps[mod_dep['name']] ||= []
+        deps[mod_dep['name']] << [mod.forge_name, mod_dep['version_requirement']]
       end
     end
     deps

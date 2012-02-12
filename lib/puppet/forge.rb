@@ -60,7 +60,7 @@ module Puppet::Forge
         if not params[:filename]
           raise ArgumentError, ":filename required"
         end
-        cache_paths = get_release_package_from_filesystem(params[:filename])
+        cache_paths = [get_release_package_from_filesystem(params[:filename])]
       else
         raise ArgumentError, "Could not determine installation source"
       end
@@ -110,24 +110,6 @@ module Puppet::Forge
       @repository ||= Puppet::Forge::Repository.new(@uri)
     end
 
-    # Connect to the remote repository and locate a specific module release
-    # by author/name combination. If a version requirement is specified, search
-    # for that exact version, or grab the latest release available.
-    #
-    # Return the following response to the caller:
-    #
-    # {"file"=>"/system/releases/p/puppetlabs/puppetlabs-apache-0.0.3.tar.gz", "version"=>"0.0.3"}
-    #
-#   def get_release(author, modname, version_requirement=nil)
-#     begin
-#       response = repository.make_http_request(request)
-#     rescue => e
-#       raise  ArgumentError, "Could not find a release for this module (#{e.message})"
-#     end
-
-#     PSON.parse(response.body)
-#   end
-
     def remote_dependency_info(author, mod_name, version)
       version_string = version ? "&version=#{version}" : ''
       request = Net::HTTP::Get.new("/api/v1/releases.json?module=#{author}/#{mod_name}" + version_string)
@@ -155,8 +137,8 @@ module Puppet::Forge
         return results if version['dependencies'].empty?
         version['dependencies'].each do |dep|
           dep_name, dep_req = dep
-          working_version = find_latest_working_versions(dep_name, versions, ancestors)
-          results += working_version if working_version
+          working_versions = find_latest_working_versions(dep_name, versions, ancestors)
+          results += working_versions if working_versions
         end
         return results
       end
@@ -183,7 +165,7 @@ module Puppet::Forge
       local_deps = @environment.module_requirements
       versions.delete_if do |version_info|
         semver = SemVer.new(version_info['version'])
-        local_deps[forge_name] and local_deps[forge_name][:required_by].any? do |req|
+        local_deps[forge_name] and local_deps[forge_name].any? do |req|
           req_name, version_req = req
           equality, local_ver = version_req.split(/\s/)
           !(semver.send(equality, SemVer.new(local_ver)))
