@@ -116,6 +116,7 @@ Puppet::Face.define(:module, '1.0.0') do
     indent = '  ' * indent_level
     version_string = mod.version ? "(#{mod.version})" : '(???)'
     unmet_dependency = mod.unmet_dependencies.empty? ? '' : 'UNMET DEPENDENCY '
-    "#{indent}#{unmet_dependency}#{mod.forge_name.gsub('/', '-')} #{version_string}\n"
+    display_name = mod.forge_name ? mod.forge_name.gsub('/', '-') : mod.name
+    "#{indent}#{unmet_dependency}#{display_name} #{version_string}\n"
   end
 end
