@@ -93,6 +93,11 @@ class Puppet::Node::Environment
     mod
   end
 
+  def module_by_forge_name(forge_name)
+    author, modname = forge_name.split('/')
+    self.module(modname)
+  end
+
   # Cache the modulepath, so that we aren't searching through
   # all known directories all the time.
   cached_attr(:modulepath, Puppet[:filetimeout]) do

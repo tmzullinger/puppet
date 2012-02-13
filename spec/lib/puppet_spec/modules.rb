@@ -4,27 +4,24 @@ module PuppetSpec::Modules
     def create(name, dir, options = {})
       module_dir = File.join(dir, name)
       Dir.mkdir(module_dir)
-      unless options[:nometadata]
-        metadata = File.join(module_dir, 'metadata.json')
 
-        author       = (options[:author] || 'matt')
-        version      = (options[:version] || '1.0.0').to_pson
-        dependencies = (options[:dependencies] || []).to_pson
+      environment = Puppet::Node::Environment.new(options[:environment])
 
-        File.open(metadata, 'w') do |file|
-          file.puts <<-HEREDOC
-            {
-              "license":      "to kill",
-              "dependencies": #{dependencies},
-              "author":       #{author.to_pson},
-              "name":         "#{author}/#{name}",
-              "source":       "whocares",
-              "version":      #{version}
-            }
-          HEREDOC
+      if metadata = options[:metadata]
+        metadata[:source]  ||= 'github'
+        metadata[:author]  ||= 'puppetlabs'
+        metadata[:version] ||= '9.9.9'
+        metadata[:license] ||= 'to kill'
+        metadata[:dependencies] ||= []
+
+        metadata[:name] = "#{metadata[:author]}/#{name}"
+
+        File.open(File.join(module_dir, 'metadata.json'), 'w') do |f|
+          f.write(metadata.to_pson)
         end
       end
-      module_dir
+
+      Puppet::Module.new(name, :environment => environment, :path => module_dir)
     end
   end
 end

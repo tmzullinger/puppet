@@ -74,7 +74,8 @@ Puppet::Face.define(:module, '1.0.0') do
 
       output << "\n" if dependency_errors
 
-      modules_by_path.each do |path, modules|
+      environment.modulepath.each do |path|
+        modules = modules_by_path[path]
         no_mods = modules.empty? ? ' (No modules installed)' : ''
         output << "#{path}#{no_mods}\n"
         if options[:tree]

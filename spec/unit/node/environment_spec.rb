@@ -214,20 +214,26 @@ describe Puppet::Node::Environment do
           PuppetSpec::Modules.create(
             'foo',
             @first,
-            :author       => 'puppetlabs',
-            :dependencies => [{ 'name' => 'puppetlabs/bar', "version_requirement" => ">= 1.0.0" }]
+            :metadata => {
+              :author       => 'puppetlabs',
+              :dependencies => [{ 'name' => 'puppetlabs/bar', "version_requirement" => ">= 1.0.0" }]
+            }
           )
           PuppetSpec::Modules.create(
             'bar',
             @second,
-            :author       => 'puppetlabs',
-            :dependencies => [{ 'name' => 'puppetlabs/foo', "version_requirement" => "<= 2.0.0" }]
+            :metadata => {
+              :author       => 'puppetlabs',
+              :dependencies => [{ 'name' => 'puppetlabs/foo', "version_requirement" => "<= 2.0.0" }]
+            }
           )
           PuppetSpec::Modules.create(
             'baz',
             @first,
-            :author       => 'puppetlabs',
-            :dependencies => [{ 'name' => 'puppetlabs/bar', "version_requirement" => "3.0.0" }]
+            :metadata => {
+              :author       => 'puppetlabs',
+              :dependencies => [{ 'name' => 'puppetlabs/bar', "version_requirement" => "3.0.0" }]
+            }
           )
 
           env.module_requirements.should == {
@@ -235,6 +241,22 @@ describe Puppet::Node::Environment do
             'puppetlabs/bar' => [['puppetlabs/baz', '3.0.0'], ['puppetlabs/foo', '>= 1.0.0']],
             'puppetlabs/baz' => []
           }
+        end
+      end
+
+      describe ".module_by_forge_name" do
+        it "should find modules by forge_name" do
+          mod = PuppetSpec::Modules.create(
+            'baz',
+            @first,
+            :metadata => {:author => 'puppetlabs'},
+            :environment => env
+          )
+          env.module_by_forge_name('puppetlabs/baz').should == mod
+        end
+
+        it "should return nil when the module can't be found" do
+          env.module_by_forge_name('ima/nothere').should be_nil
         end
       end
 
@@ -277,14 +299,15 @@ describe Puppet::Node::Environment do
           env.modules.each {|mod| mod.environment.should == env }
         end
 
-        it "should cache the module list" do
-          env.modulepath = %w{/a}
-          Dir.expects(:entries).once.with("/a").returns %w{foo}
-
-          env.modules
-          env.modules
-        end
       end
+    end
+
+    it "should cache the module list" do
+      env.modulepath = %w{/a}
+      Dir.expects(:entries).once.with("/a").returns %w{foo}
+
+      env.modules
+      env.modules
     end
   end
 
