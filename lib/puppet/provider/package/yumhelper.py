@@ -38,6 +38,21 @@ try:
         ypl = pkg_lists(my)
         for pkg in ypl.updates:
             print "_pkg %s %s %s %s %s" % (pkg.name, pkg.epoch, pkg.version, pkg.release, pkg.arch)
+            # Add package provides, to allow package { '$provide': }
+            for prov in pkg.provides:
+                pname, op, evr = prov
+                # Technically, the provides could differ in nvr, but the rpm
+                # query method doesn't take that into account, so we shouldn't
+                # do so here, either.
+                pepoch, pver, prel = pkg.epoch, pkg.version, pkg.release
+                print "_pkg %s %s %s %s %s" % (pname, pepoch, pver, prel, pkg.arch)
+            # Add dirs/files, to allow package { '/some/path': }
+            try:
+                for path in pkg.dirlist + pkg.filelist:
+                    print "_pkg %s %s %s %s %s" % (path, pkg.epoch, pkg.version, pkg.release, pkg.arch)
+            except yum.Errors.NoMoreMirrorsRepoError, e:
+                # We note the error, but don't exit for this.
+                print "_err yum.Errors.NoMoreMirrorsRepoError: %s" % e
     finally:
         my.closeRpmDB()
 except IOError, e:
